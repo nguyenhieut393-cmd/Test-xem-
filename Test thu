@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hiển thị Dữ liệu Google Sheet Live</title>
+  <!-- Tailwind CSS cho giao diện hiện đại -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PapaParse hỗ trợ đọc CSV mượt mà -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen p-4 md:p-8">
+
+  <div class="max-w-7xl mx-auto space-y-6">
+    
+    <!-- Tiêu đề & Trạng thái -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold text-xl">
+          <i class="fa-solid fa-table"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold text-slate-900">Bảng Dữ Liệu Google Sheet Live</h1>
+          <p class="text-sm text-slate-500">Tự động đồng bộ và hiển thị dữ liệu dạng bảng từ Google Sheets</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-2">
+        <span id="sync-status" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          Chưa kết nối
+        </span>
+        <button onclick="fetchSheetData()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
+          <i class="fa-solid fa-rotate"></i>
+          Làm mới
+        </button>
+      </div>
+    </div>
+
+    <!-- Ô cấu hình Link Google Sheet -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+        <i class="fa-solid fa-link text-emerald-600"></i> Cấu hình đường link Google Sheet
+      </h2>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <input 
+          type="text" 
+          id="sheet-url" 
+          placeholder="Dán link Google Sheet CSV (ví dụ: https://docs.google.com/spreadsheets/d/e/.../pub?output=csv)" 
+          class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm transition-all"
+        />
+        <button 
+          onclick="applyUrl()" 
+          class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm rounded-xl transition-colors shrink-0"
+        >
+          Cập nhật Link
+        </button>
+      </div>
+      
+      <!-- Hướng dẫn -->
+      <details class="text-xs text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-200">
+        <summary class="font-medium text-slate-700 cursor-pointer hover:text-emerald-600 transition-colors">
+          <i class="fa-solid fa-circle-question mr-1"></i> Hướng dẫn lấy đường link CSV từ Google Sheet (3 bước)
+        </summary>
+        <ol class="list-decimal list-inside mt-2 space-y-1 pl-1 text-slate-600 leading-relaxed">
+          <li>Mở Google Sheet của bạn &rarr; Chọn <strong>Tệp (File)</strong> &rarr; <strong>Chia sẻ (Share)</strong> &rarr; <strong>Xuất bản lên web (Publish to web)</strong>.</li>
+          <li>Ở mục định dạng, đổi từ "Trang web" sang <strong>Giá trị phân tách bằng dấu phẩy (.csv)</strong>.</li>
+          <li>Nhấn <strong>Xuất bản (Publish)</strong>, sao chép link nhận được và dán vào ô bên trên.</li>
+        </ol>
+      </details>
+    </div>
+
+    <!-- Khu vực hiển thị bảng dữ liệu -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      
+      <!-- Thanh tìm kiếm -->
+      <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50">
+        <div class="relative w-full sm:w-80">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+          <input 
+            type="text" 
+            id="search-input" 
+            oninput="filterData()" 
+            placeholder="Tìm kiếm thông tin..." 
+            class="w-full pl-10 pr-4 py-2 bg-white rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+          />
+        </div>
+        <div class="text-xs font-medium text-slate-500 self-end sm:self-center" id="row-count">
+          Hiển thị 0 dòng
+        </div>
+      </div>
+
+      <!-- Đang tải -->
+      <div id="loading-state" class="hidden p-12 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-emerald-500 border-t-transparent mb-3"></div>
+        <p class="text-sm text-slate-500 font-medium">Đang tải dữ liệu từ Google Sheet...</p>
+      </div>
+
+      <!-- Thông báo lỗi -->
+      <div id="error-state" class="hidden p-8 text-center bg-rose-50/50">
+        <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3 text-lg">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h3 class="text-sm font-semibold text-rose-900 mb-1">Không thể kết nối dữ liệu</h3>
+        <p id="error-msg" class="text-xs text-rose-600 max-w-md mx-auto mb-4">Vui lòng kiểm tra lại đường link Google Sheet CSV của bạn.</p>
+        <button onclick="loadDemoData()" class="text-xs font-medium text-emerald-600 hover:underline">
+          <i class="fa-solid fa-eye mr-1"></i> Xem dữ liệu mẫu (Demo)
+        </button>
+      </div>
+
+      <!-- Bảng dữ liệu -->
+      <div id="table-container" class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left border-collapse">
+          <thead id="table-head" class="bg-slate-100/80 text-slate-700 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+            <!-- Header động -->
+          </thead>
+          <tbody id="table-body" class="divide-y divide-slate-100 text-sm text-slate-600">
+            <!-- Hàng dữ liệu động -->
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let currentCsvUrl = "";
+    let rawData = [];
+    let headers = [];
+
+    // Dữ liệu Demo mẫu
+    const demoData = [
+      { "STT": "1", "Họ và Tên": "Nguyễn Văn A", "Chức vụ": "Quản lý Dự án", "Phòng ban": "Công nghệ", "Trạng thái": "Hoạt động", "Lương": "25,000,000 VNĐ" },
+      { "STT": "2", "Họ và Tên": "Trần Thị B", "Chức vụ": "Lập trình viên Frontend", "Phòng ban": "Công nghệ", "Trạng thái": "Hoạt động", "Lương": "18,000,000 VNĐ" },
+      { "STT": "3", "Họ và Tên": "Lê Hoàng C", "Chức vụ": "Chuyên viên Marketing", "Phòng ban": "Truyền thông", "Trạng thái": "Tạm nghỉ", "Lương": "15,000,000 VNĐ" },
+      { "STT": "4", "Họ và Tên": "Phạm Minh D", "Chức vụ": "Thiết kế UI/UX", "Phòng ban": "Sản phẩm", "Trạng thái": "Hoạt động", "Lương": "20,000,000 VNĐ" }
+    ];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDemoData();
+    });
+
+    function applyUrl() {
+      const inputUrl = document.getElementById('sheet-url').value.trim();
+      if (!inputUrl) {
+        alert("Vui lòng nhập đường link Google Sheet CSV!");
+        return;
+      }
+      currentCsvUrl = inputUrl;
+      fetchSheetData();
+    }
+
+    function loadDemoData() {
+      document.getElementById('error-state').classList.add('hidden');
+      document.getElementById('loading-state').classList.add('hidden');
+      document.getElementById('table-container').classList.remove('hidden');
+      
+      rawData = demoData;
+      headers = Object.keys(demoData[0]);
+      
+      updateSyncStatus('demo');
+      renderTable(rawData);
+    }
+
+    async function fetchSheetData() {
+      if (!currentCsvUrl) {
+        loadDemoData();
+        return;
+      }
+
+      showLoading(true);
+
+      try {
+        const response = await fetch(currentCsvUrl);
+        if (!response.ok) throw new Error("HTTP Status: " + response.status + " - Không thể truy cập link.");
+        
+        const csvText = await response.text();
+
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            showLoading(false);
+            if (results.data && results.data.length > 0) {
+              rawData = results.data;
+              headers = results.meta.fields || Object.keys(rawData[0]);
+              updateSyncStatus('online');
+              renderTable(rawData);
+            } else {
+              showError("File Google Sheet không có dữ liệu hoặc định dạng không hợp lệ.");
+            }
+          },
+          error: function(err) {
+            showLoading(false);
+            showError("Lỗi đọc file CSV: " + err.message);
+          }
+        });
+
+      } catch (error) {
+        showLoading(false);
+        showError("Không thể kết nối. Đảm bảo bạn đã chọn 'Xuất bản lên web' dưới dạng CSV và công khai link. Chi tiết: " + error.message);
+      }
+    }
+
+    function renderTable(data) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+      const rowCount = document.getElementById('row-count');
+
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${headers.length || 1}" class="text-center py-8 text-slate-400">Không tìm thấy dữ liệu phù hợp</td></tr>`;
+        rowCount.innerText = "Hiển thị 0 dòng";
+        return;
+      }
+
+      // Tạo tiêu đề cột động
+      const trHead = document.createElement('tr');
+      headers.forEach(headerText => {
+        const th = document.createElement('th');
+        th.className = "px-6 py-3.5 font-semibold";
+        th.innerText = headerText;
+        trHead.appendChild(th);
+      });
+      thead.appendChild(trHead);
+
+      // Tạo hàng dữ liệu
+      data.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        tr.className = index % 2 === 0 ? 'bg-white hover:bg-slate-50/80 transition-colors' : 'bg-slate-50/40 hover:bg-slate-50/80 transition-colors';
+
+        headers.forEach(header => {
+          const td = document.createElement('td');
+          td.className = "px-6 py-4 whitespace-nowrap";
+          
+          let cellValue = row[header] !== undefined ? row[header] : '';
+          
+          // Tạo huy hiệu màu đẹp cho cột "Trạng thái"
+          if (header.toLowerCase().includes('trạng thái') || header.toLowerCase().includes('status')) {
+            if (cellValue.toLowerCase().includes('hoạt động') || cellValue.toLowerCase().includes('active')) {
+              td.innerHTML = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">${cellValue}</span>`;
+            } else if (cellValue.toLowerCase().includes('tạm nghỉ') || cellValue.toLowerCase().includes('pending')) {
+              td.innerHTML = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">${cellValue}</span>`;
+            } else {
+              td.innerText = cellValue;
+            }
+          } else {
+            td.innerText = cellValue;
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      rowCount.innerText = `Hiển thị ${data.length} dòng`;
+    }
+
+    function filterData() {
+      const query = document.getElementById('search-input').value.toLowerCase().trim();
+      if (!query) {
+        renderTable(rawData);
+        return;
+      }
+
+      const filtered = rawData.filter(row => {
+        return Object.values(row).some(val => 
+          String(val).toLowerCase().includes(query)
+        );
+      });
+
+      renderTable(filtered);
+    }
+
+    function showLoading(isLoading) {
+      const loadingState = document.getElementById('loading-state');
+      const tableContainer = document.getElementById('table-container');
+      const errorState = document.getElementById('error-state');
+
+      if (isLoading) {
+        loadingState.classList.remove('hidden');
+        tableContainer.classList.add('hidden');
+        errorState.classList.add('hidden');
+      } else {
+        loadingState.classList.add('hidden');
+      }
+    }
+
+    function showError(message) {
+      document.getElementById('loading-state').classList.add('hidden');
+      document.getElementById('table-container').classList.add('hidden');
+      const errorState = document.getElementById('error-state');
+      errorState.classList.remove('hidden');
+      document.getElementById('error-msg').innerText = message;
+      updateSyncStatus('error');
+    }
+
+    function updateSyncStatus(type) {
+      const statusBadge = document.getElementById('sync-status');
+      if (type === 'online') {
+        statusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200";
+        statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Đã kết nối Live`;
+      } else if (type === 'demo') {
+        statusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200";
+        statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-blue-500"></span> Dữ liệu Demo`;
+      } else {
+        statusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200";
+        statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span> Lỗi kết nối`;
+      }
+    }
+  </script>
+</body>
+</html>
